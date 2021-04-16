@@ -8,7 +8,7 @@
 # import sys
 # import onnxruntime as rt
 
-#lambda
+# lambda
 import sys
 
 sys.path.append("./packages")
@@ -19,31 +19,55 @@ from datetime import datetime
 import boto3
 import onnxruntime as rt
 
+PAD = 75
+
+
 def preprocess(image):
-    # Only pull out green pixels from the image
-    h,s,v,h1,s1,v1 = 42,60,0,80,255,255
+    # only pull out green pixels from the image
+    h, s, v, h1, s1, v1 = 40, 45, 0, 80, 255, 255
     input_shape = image.shape
-    
+
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    lower, upper = np.array([h,s,v]), np.array([h1,s1,v1])
+    lower, upper = np.array([h, s, v]), np.array([h1, s1, v1])
     mask = cv2.inRange(hsv, lower, upper)
     res = cv2.bitwise_and(image, image, mask=mask)
-    kernel = np.ones((3,3), np.uint)
+    kernel = np.ones((3, 3), np.uint)
     gray = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    gray = cv2.bitwise_not(gray)
+    contours, _ = cv2.findContours(gray, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
+    try:
+        c = max(contours, key=lambda con: cv2.contourArea(con))
+        if cv2.contourArea(c) < 3000:
+            raise ValueError
+        # Find bounding rectangle
+        x, y, w, h = cv2.boundingRect(c)
+        box = gray[y - PAD:y + h + PAD, x - PAD:x + w + PAD]
+        if len(box) < 10:
+            raise ValueError
+        gray = cv2.bitwise_not(box)
+    except ValueError:
+        gray = cv2.bitwise_not(gray)
+
+    # Crop the center square of the given image/frame.
+    # Image/frame dimension is around 16:9 ratio, similar to a movie screen.
+    # Crop the image/frame to get the center square of it.
     h, w = gray.shape
-    crop_img = gray[0:int(h), int((w - h) / 2):int((w + h) / 2)]
+    if w >= h:
+        crop_img = gray[0:int(h), int((w - h) / 2):int((w + h) / 2)]
+    else:
+        crop_img = gray[int((h - w) / 2):int((w + h) / 2), 0:int(w)]
 
     # Resizing to make it compatible with the model input size.
     resized_img = cv2.resize(crop_img, (64, 64)).astype(np.float32) / 255
     img = np.reshape(resized_img, (1, 64, 64, 1))
     return img
 
+
 def softmax(x):
     """Compute softmax values for each sets of scores in x."""
     e_x = np.exp(x - np.max(x))
     return e_x / e_x.sum()
+
 
 def makeInferences(sess, input_img):
     input_name = sess.get_inputs()[0].name
@@ -51,7 +75,6 @@ def makeInferences(sess, input_img):
     pred_onx = sess.run([output_name], {input_name: input_img})[0]
     scores = softmax(pred_onx)
     return scores
-
 
 
 # ====================== LOCAL VERSION ======================
@@ -94,7 +117,7 @@ def pipeline_test(image_file_name):
 def lambda_handler(event, context):
     s3_bucket_name = "ndelcoro-shape-classification-aws-bucket"
     lambda_tmp_directory = "/tmp"
-#     lambda_tmp_directory = "."
+    #     lambda_tmp_directory = "."
     model_file_name = "model.onnx"
     input_file_name = "shape.png"
     output_file_name = "results.txt"
@@ -112,16 +135,16 @@ def lambda_handler(event, context):
         pass
 
     # Import input image in grayscale and preprocess it.
-#     image = Image.open(os.path.join(lambda_tmp_directory, input_file_name))
-#     img = np.array(image)[:,:,0:3]
+    #     image = Image.open(os.path.join(lambda_tmp_directory, input_file_name))
+    #     img = np.array(image)[:,:,0:3]
 
     frame = cv2.imread(os.path.join(lambda_tmp_directory, input_file_name))
     processed_image = preprocess(frame)
-    
+
     # Make inference using the ONNX model.
     sess = rt.InferenceSession(os.path.join(lambda_tmp_directory, model_file_name))
     inferences = makeInferences(sess, processed_image)
-    
+
     # Output probabilities in an output file.
     f = open(os.path.join(lambda_tmp_directory, output_file_name), "w+")
     f.write("Predicted: %d \n" % np.argmax(inferences))
@@ -137,6 +160,7 @@ def lambda_handler(event, context):
         client.upload_file(os.path.join(lambda_tmp_directory, output_file_name), s3_bucket_name, output_file_name)
     except:
         pass
+
 
 # lambda_handler(None,None)
 

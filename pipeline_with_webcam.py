@@ -15,10 +15,12 @@ import traceback
 import sys
 import onnxruntime as rt
 
+PAD = 75
+
 
 def preprocess(image):
-    # TODO only pull out green pixels from the image
-    h, s, v, h1, s1, v1 = 42, 60, 0, 80, 255, 255
+    # only pull out green pixels from the image
+    h, s, v, h1, s1, v1 = 40, 45, 0, 80, 255, 255
     input_shape = image.shape
 
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -27,13 +29,29 @@ def preprocess(image):
     res = cv2.bitwise_and(image, image, mask=mask)
     kernel = np.ones((3, 3), np.uint)
     gray = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    gray = cv2.bitwise_not(gray)
-    # TODO: Crop the center square of the given image/frame.
+    contours, _ = cv2.findContours(gray, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    try:
+        c = max(contours, key=lambda con: cv2.contourArea(con))
+        if cv2.contourArea(c) < 3000:
+            raise ValueError
+        # Find bounding rectangle
+        x, y, w, h = cv2.boundingRect(c)
+        box = gray[y - PAD:y + h + PAD, x - PAD:x + w + PAD]
+        if len(box) < 10:
+            raise ValueError
+        gray = cv2.bitwise_not(box)
+    except ValueError:
+        gray = cv2.bitwise_not(gray)
+
+    # Crop the center square of the given image/frame.
     # Image/frame dimension is around 16:9 ratio, similar to a movie screen.
     # Crop the image/frame to get the center square of it.
-
     h, w = gray.shape
-    crop_img = gray[0:int(h), int((w - h) / 2):int((w + h) / 2)]
+    if w >= h:
+        crop_img = gray[0:int(h), int((w - h) / 2):int((w + h) / 2)]
+    else:
+        crop_img = gray[int((h - w) / 2):int((w + h) / 2), 0:int(w)]
 
     # Resizing to make it compatible with the model input size.
     resized_img = cv2.resize(crop_img, (64, 64)).astype(np.float32) / 255
@@ -87,7 +105,7 @@ def pipeline_test(image_file_name):
             class_labels = ['●', '■', '★', '▲']
             # class_labels = ['circle', 'square', 'star', 'triangle']
             # print(f'Labels={class_labels}')
-            print(f'inferences:')
+            print('inferences:')
             for label in range(len(class_labels)):
                 print(f'  {class_labels[label]}: {inferences[0][label]}')
             print(f'Inference = {class_labels[inference]}')
