@@ -1,11 +1,4 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[6]:
-
-
 import os
-import json
 import time
 import numpy as np
 import cv2
@@ -76,11 +69,11 @@ def makeInferences(sess, input_img):
 # ====================== LOCAL VERSION ======================
 
 
-def pipeline_test(image_file_name):
+def pipeline_test():
     """ Run the DeepLens inference loop frame by frame"""
     try:
-        model_directory = "/Users/nodcah/Downloads"
-        model_name = "model.onnx"  # onnx-model
+        model_directory = "."
+        model_name = "model"  # onnx-model
 
         # When the ONNX model is imported via DeepLens console, the model is copied
         # to the AWS DeepLens device, which is located in the "/opt/awscam/artifacts/".
@@ -131,10 +124,4 @@ def pipeline_test(image_file_name):
         print(traceback.format_exc())
 
 
-inputImageFileName = "shape.png"
-pipeline_test(inputImageFileName)
-# ### Creating GUI Components ###
-# 
-# 
-
-# In[8]:
+pipeline_test()
